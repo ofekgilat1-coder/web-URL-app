@@ -51,22 +51,25 @@ final_URL=URL
 parsed= urlparse(final_URL)
 # XSS check
 params = parse_qs(parsed.query)
-payload='<script>alert("Hi this is DAST test")</script>'
+payload='<script>alert("Hi this is DAST test")</script>' #the xss payload
 for param in params:
     test_params = params.copy()
     test_params[param] = payload   
     response=requests.get(URL, params=test_params, timeout=5)
-    if payload in response.text:
-        if ("&lt;"+payload) not in response.text and (payload+"&lt;") not in response.text and ("&quot;"+payload) not in response.text and (payload+"&quot;") not in response.text:
+    if payload in response.text: #checking if the payload in the HTML
+        if ("&lt;"+payload) not in response.text and (payload+"&lt;") not in response.text and ("&quot;"+payload) not in response.text and (payload+"&quot;") not in response.text: #checking if its encripted
             HTML_CHECK = BeautifulSoup(response.text, "lxml")
+            #checking if its in a comment
             comments = HTML_CHECK.find_all(string=lambda text: isinstance(text, Comment))
             for comment in comments:
                 if payload in comment.text:
                     print("no risk")
+            #checking iff its in a script
             list_scripts=HTML_CHECK.find_all("script")
             for x in list_scripts:
                 if payload in x.text:
                     print("high risk")
+            #cheking if its in a regular text
             ALL_TEXT=HTML_CHECK.find_all(string=True)
             REG_TEXT=[]
             for checker in ALL_TEXT:
@@ -80,10 +83,37 @@ for param in params:
                     continue
                 else:
                     REG_TEXT.append(checker)
-            
             for Z in REG_TEXT:
                 if payload in Z:
-                    print("medium risk")       
+                    print("medium risk") 
+            #checking if its in attribute
+            List_all_tags= HTML_CHECK.find_all(True)           
+            for tag in List_all_tags:
+                dict_attributes=tag.attrs
+                for attribute_name,attribute_value in tag.attrs.items():
+                    if isinstance(attribute_value,list)==False:
+                        if(payload in attribute_value):
+                            if ("&lt;"+payload) not in attribute_value and (payload+"&lt;") not in attribute_value and ("&quot;"+payload) not in attribute_value and (payload+"&quot;") not in attribute_value:
+                                if(attribute_name.startswith("on")):
+                                    print("very high risk")
+                                if(attribute_name=="href" or attribute_name=="src" or attribute_name=="style"):
+                                    print("high risk")
+                                if(attribute_name=="alt" or attribute_name=="title"):
+                                    print("low risk")                   
+                    else:
+                        for att_val_inlist in attribute_value:
+                            if(payload in att_val_inlist):
+                                if ("&lt;"+payload) not in att_val_inlist and (payload+"&lt;") not in att_val_inlist and ("&quot;"+payload) not in att_val_inlist and (payload+"&quot;") not in att_val_inlist:
+                                    if(attribute_name.startswith("on")):
+                                        print("very high risk")
+                                    if(attribute_name=="href" or attribute_name=="src" or attribute_name=="style"):
+                                        print("high risk")
+                                    if(attribute_name=="alt" or attribute_name=="title"):
+                                        print("low risk")
+
+
+             
+                 
             
 
 
