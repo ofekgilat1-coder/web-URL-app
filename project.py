@@ -1,5 +1,5 @@
 import requests
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import parse_qs, urlparse, urlunparse
 from bs4 import BeautifulSoup
 from bs4.element import Comment
 import lxml
@@ -19,8 +19,6 @@ URL_path=parsed.path
 URL_Query=parsed.query
 URL_Fragment=parsed.fragment
 URL= urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.query, parsed.params,""))
-print(URL_path)
-print(URL_Fragment)
 try:
     if URL_Scheme not in ("https", "http") or URL_HostName == "":
         raise Exception("Invalid URL")
@@ -54,7 +52,7 @@ params = parse_qs(parsed.query)
 payload='<script>alert("Hi this is DAST test")</script>' #the xss payload
 for param in params:
     test_params = params.copy()
-    test_params[param] = payload   
+    test_params[param] = [payload]   
     response=requests.get(URL, params=test_params, timeout=5)
     if payload in response.text: #checking if the payload in the HTML
         if ("&lt;"+payload) not in response.text and (payload+"&lt;") not in response.text and ("&quot;"+payload) not in response.text and (payload+"&quot;") not in response.text: #checking if its encripted
@@ -110,6 +108,7 @@ for param in params:
                                         print("high risk")
                                     if(attribute_name=="alt" or attribute_name=="title"):
                                         print("low risk")
+                
 
 
              
