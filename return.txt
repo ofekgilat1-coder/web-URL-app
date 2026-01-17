@@ -1,0 +1,3 @@
+Redirect detected
+the redirect gives differend host
+critical

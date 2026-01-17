@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>XSS site</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: "Consolas", "Courier New", monospace;
+        }
+
+        body {
+            background: #000;
+            color: #00ff6a;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        .scanlines {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            background: repeating-linear-gradient(to bottom,
+                    rgba(0, 0, 0, 0.1) 0px,
+                    rgba(0, 0, 0, 0.1) 2px,
+                    rgba(0, 0, 0, 0.3) 3px);
+            mix-blend-mode: multiply;
+            opacity: 0.4;
+            z-index: 10;
+        }
+
+        header {
+            padding: 20px 30px;
+            border-bottom: 1px solid #00ff6a33;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: radial-gradient(circle at top, #021b0a 0, #000 55%);
+        }
+
+        main {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 2fr 1.2fr;
+            gap: 20px;
+            padding: 20px 30px 30px;
+        }
+
+        .panel {
+            border: 1px solid #00ff6a33;
+            background: radial-gradient(circle at top left, #021b0a 0, #000 60%);
+            padding: 15px 18px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .terminal {
+            font-size: 0.9rem;
+            line-height: 1.4;
+            color: #00ff6a;
+            height: 320px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        #main-line {
+            white-space: nowrap;
+            top: auto;
+            left: auto;
+            position: fixed;
+            color: #00ff6a;
+            background-color: #00000000;
+            height: 120px;
+            width: 256px;
+            border-radius: 0%;
+            border-color: #00000000;
+            resize: none;
+        }
+
+        #output {
+            white-space: nowrap;
+            top: 200px;
+            left: auto;
+            position: fixed;
+            color: #00ff6a;
+            background-color: #00000000;
+            border-radius: 0%;
+            border-color: #00000000;
+            resize: none;
+            height: 200px;
+        }
+
+        #submit-Button {
+            color: #00ff6a;
+            background-color: #00000000;
+            top: 170px;
+            position: fixed;
+            width: auto;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="scanlines"></div>
+    <main>
+        <section class="panel">
+            <div class="panel-title">XSS inputs</div>
+            <textarea id="main-line" value="main-line"></textarea>
+            <button id="submit-Button" value="button">submit</button>
+            <textarea id="output" value="output" disabled="true"></textarea>
+            <script>
+                //auto send in \n
+                const text = document.getElementById("main-line")
+                const button = document.getElementById("submit-Button")
+                const ret = document.getElementById("output")
+
+                //functions
+                function send() {
+                    const encodedURL = encodeURIComponent(text.value);
+                    const newURL = "/check?URL=" + encodedURL;
+                    
+                    // במקום לשנות את המיקום של הדף (מה שגורם לקריסה), נשלח בקשה שקטה
+                    text.disabled = true;
+                    button.innerText = "Scanning...";
+                    
+                    fetch(newURL).then(() => {
+                        // אחרי שהשרת מסיים, נחכה שנייה ונקרא את התוצאה
+                        setTimeout(start, 2000); 
+                        text.disabled = false;
+                        button.innerText = "submit";
+                    }).catch(err => {
+                        console.log("Error or timeout, but check return.txt anyway");
+                        setTimeout(start, 2000);
+                    });
+                }
+
+                function autoSend(e) {
+                    if (e.key === "Enter") {
+                        text.disabled = true
+                        send()
+                    }
+                }
+
+                function start() {
+                    fetch("return.txt").then(res => res.text()).then(text => {
+                        ret.textContent = text
+                    })
+                    console.log("start")
+                }
+
+                //eventlisteners
+                button.addEventListener("click", () => send())
+                text.addEventListener("keypress", (event) => autoSend(event))
+                start()
+            </script>
+        </section>
+    </main>
+</body>
+
+</html>

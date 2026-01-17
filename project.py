@@ -1,10 +1,17 @@
+import sys
 import requests
 from urllib.parse import parse_qs, urlparse, urlunparse
 from bs4 import BeautifulSoup
 from bs4.element import Comment
 import lxml
-
-x = input("Give a URL to check: ")
+from html import unescape
+from html import escape
+import re
+if len(sys.argv) > 1:
+    x = sys.argv[1]
+    print(f"DEBUG: Scanner received URL: {x}")
+else:
+    x = "http://example.com"
 parsed= urlparse(x)
 if parsed.scheme=="":
     x="https://"+x
@@ -13,6 +20,7 @@ if parsed.scheme not in ("https","http") :
     URL1= urlunparse(("https", parsed.netloc, parsed.path, parsed.query, parsed.params,""))
     print(URL1)
     parsed = urlparse(URL1)
+HEADERS = {"User-Agent": "Mozilla/5.0"}
 URL_Scheme=parsed.scheme
 URL_HostName=parsed.hostname
 URL_path=parsed.path
@@ -27,18 +35,20 @@ except Exception as e:
 finally:
     URL_HostName=URL_HostName.lower()
     try:
-        Need_Slash1 = requests.get(URL, timeout=5)
+        Need_Slash1 = requests.get(URL, timeout=5, headers=HEADERS)
+        if Need_Slash1.status_code >= 400:
+            print("URL reachable but returned", Need_Slash1.status_code)
     except requests.RequestException:
-        print("URL לא זמין")
+        print("INVALID URL")
     if URL_path and URL_path[-1] == "/":
         try:
             URL_CHECK= urlunparse((URL_Scheme, parsed.netloc, parsed.path[:-1],parsed.query, parsed.params, ""))
-            Need_Slash2 = requests.get(URL_CHECK, timeout=5)
+            Need_Slash2 = requests.get(URL_CHECK, timeout=5, headers=HEADERS)
         except requests.RequestException:
-            print("URL לא זמין")
+            pass
         if (Need_Slash1.text==Need_Slash2.text and Need_Slash1.status_code==Need_Slash2.status_code):
             URL=URL_CHECK
-Redirect_Response= requests.get(URL, timeout=5,allow_redirects=False)
+Redirect_Response= requests.get(URL, timeout=5,allow_redirects=False, headers=HEADERS)
 if 300 <= Redirect_Response.status_code < 400:
     print("Redirect detected")
     original_host = urlparse(URL).hostname
@@ -47,28 +57,84 @@ if 300 <= Redirect_Response.status_code < 400:
         print("the redirect gives differend host")
 final_URL=URL
 parsed= urlparse(final_URL)
+def findHTTPONLY(URL):
+    r = requests.get(URL, headers=HEADERS)
+    for c in r.cookies:
+        if c._rest.get("HttpOnly"):
+            return 1
+    return 0
+def findSecure(URL):
+    r = requests.get(URL, headers=HEADERS)
+    for c in r.cookies:
+        if c.secure:
+            return 1
+    return 0
+def findSameSite(URL):
+    history = []
+    mainRequest = requests.session()
+    req = mainRequest.request("GET",url=URL)
+    history.append(req)
+    if not req.cookies.get("Samesite") == None:
+        return 3
+    return 0
 # XSS check
+#List of dangerous tags
+DANGEROUS_TAGS = [
+    "script",
+    "img",
+    "svg",
+    "iframe",
+    "object",
+    "embed",
+    "link",
+    "meta",
+    "base",
+    "video",
+    "audio",
+    "style"
+]
+level_of_risk="None"
+#all type of risk level
+RISK_ORDER = ["None","found but None", "low risk", "medium risk", "high risk", "critical"]
+#function which sets the risk level
+def set_risk(new):
+    global level_of_risk
+    if RISK_ORDER.index(new) > RISK_ORDER.index(level_of_risk):
+        level_of_risk = new
+#takes from the query the params
 params = parse_qs(parsed.query)
-payload='<script>alert("Hi this is DAST test")</script>' #the xss payload
+if not params:
+    params = {"xss": ["test"]}
+#the payload
+MARKER = "XSS_TEST_123"
+def create_payloads():
+    return {
+        "event_plain": f'"><img src=x onerror={MARKER}>'
+    }
+payloads= create_payloads()
+BASE_URL = urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", "", ""))
 for param in params:
-    test_params = params.copy()
-    test_params[param] = [payload]   
-    response=requests.get(URL, params=test_params, timeout=5)
-    if payload in response.text: #checking if the payload in the HTML
-        if ("&lt;"+payload) not in response.text and (payload+"&lt;") not in response.text and ("&quot;"+payload) not in response.text and (payload+"&quot;") not in response.text: #checking if its encripted
-            HTML_CHECK = BeautifulSoup(response.text, "lxml")
+    for payload in payloads.values():
+        test_params = {k: v[0] if isinstance(v, list) else v for k, v in params.items()}
+        #injecting the payload in the param value
+        test_params[param] = payload
+        try:  
+            response=requests.get(BASE_URL, params=test_params, timeout=5, headers=HEADERS)
+            decodedBody = unescape(response.text)
+            headers_string = str(response.headers)
+            if MARKER not in decodedBody and MARKER not in headers_string:
+                continue
+            set_risk("found but None")
+            HTML_CHECK_Body = BeautifulSoup(decodedBody, "lxml")
             #checking if its in a comment
-            comments = HTML_CHECK.find_all(string=lambda text: isinstance(text, Comment))
+            comments = HTML_CHECK_Body.find_all(string=lambda text: isinstance(text, Comment))
             for comment in comments:
-                if payload in comment.text:
-                    print("no risk")
-            #checking iff its in a script
-            list_scripts=HTML_CHECK.find_all("script")
-            for x in list_scripts:
-                if payload in x.text:
-                    print("high risk")
-            #cheking if its in a regular text
-            ALL_TEXT=HTML_CHECK.find_all(string=True)
+                if MARKER in comment.text:
+                    set_risk("found but None")
+                if MARKER in unescape(comment.text):
+                    set_risk("found but None")
+            #cheking if its in a regular text 
+            ALL_TEXT=HTML_CHECK_Body.find_all(string=True)
             REG_TEXT=[]
             for checker in ALL_TEXT:
                 if (isinstance(checker, Comment)):
@@ -82,61 +148,58 @@ for param in params:
                 else:
                     REG_TEXT.append(checker)
             for Z in REG_TEXT:
-                if payload in Z:
-                    print("medium risk") 
+            #checking if in the enescaped text there is dangerous tag 
+                text = unescape(Z).lower()
+                for tag in DANGEROUS_TAGS:
+                        if f"<{tag}" in text:
+                            set_risk("low risk")
+            #checking if its in a script
+            list_scripts=HTML_CHECK_Body.find_all("script")
+            for x in list_scripts:        
+                if (MARKER in x.text or MARKER in unescape(x.text)):
+                    if "</script>" in decodedBody.lower().split(MARKER)[0]:
+                        set_risk("high risk")
             #checking if its in attribute
-            List_all_tags= HTML_CHECK.find_all(True)           
+            List_all_tags= HTML_CHECK_Body.find_all(True)         
             for tag in List_all_tags:
                 dict_attributes=tag.attrs
-                for attribute_name,attribute_value in tag.attrs.items():
-                    if isinstance(attribute_value,list)==False:
-                        if(payload in attribute_value):
-                            if ("&lt;"+payload) not in attribute_value and (payload+"&lt;") not in attribute_value and ("&quot;"+payload) not in attribute_value and (payload+"&quot;") not in attribute_value:
-                                if(attribute_name.startswith("on")):
-                                    print("very high risk")
-                                if(attribute_name=="href" or attribute_name=="src" or attribute_name=="style"):
-                                    print("high risk")
-                                if(attribute_name=="alt" or attribute_name=="title"):
-                                    print("low risk")                   
-                    else:
-                        for att_val_inlist in attribute_value:
-                            if(payload in att_val_inlist):
-                                if ("&lt;"+payload) not in att_val_inlist and (payload+"&lt;") not in att_val_inlist and ("&quot;"+payload) not in att_val_inlist and (payload+"&quot;") not in att_val_inlist:
-                                    if(attribute_name.startswith("on")):
-                                        print("very high risk")
-                                    if(attribute_name=="href" or attribute_name=="src" or attribute_name=="style"):
-                                        print("high risk")
-                                    if(attribute_name=="alt" or attribute_name=="title"):
-                                        print("low risk")
-                
-
-
-             
-                 
-            
-
-
-
-
-            
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    
-
-
-
+                for attribute_name,attribute_value in tag.attrs.items():  
+                    val = unescape(str(attribute_value))
+                    if MARKER in val:
+                        if attribute_name.lower().startswith("on"):
+                            set_risk("critical")
+                        elif attribute_name.lower() in ["href", "src", "style"]:
+                            if level_of_risk != "critical":
+                                set_risk("high risk")
+                            elif attribute_name.lower() in ["alt", "title"]:
+                                set_risk("low risk")
+            for h_name, h_val in response.headers.items():
+                if MARKER in h_val:
+                    set_risk("medium risk")
+                    print(f"[!] Marker reflected in Header: {h_name}")
+        except Exception as e:
+            print(e)
+#checking if the site is HTTPONLY and Secure
+def Risk_inc_HTTPONLY(risk_level):
+    x=findHTTPONLY(final_URL)
+    if x==1:
+        return
+    if(risk_level=="low risk"):
+        set_risk("medium risk")
+    elif(risk_level=="medium risk"):
+        set_risk("high risk")
+    elif(risk_level=="high risk"):
+        set_risk("critical")
+additional_warning="None"
+def Risk_inc_Secure(risk_level):
+    global additional_warning
+    if(findSecure(final_URL)==0):
+        additional_warning = "Secure flag missing - Vulnerable to MitM"
+Risk_inc_HTTPONLY(level_of_risk)
+Risk_inc_Secure(level_of_risk)
+print(level_of_risk)
+#example: https://httpbin.org/get?xss=test
+#example: ynet.co.il
 
 
 
