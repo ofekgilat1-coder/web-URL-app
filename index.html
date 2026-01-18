@@ -91,7 +91,8 @@
             border-radius: 0%;
             border-color: #00000000;
             resize: none;
-            height: 200px;
+            height: 500px;
+            width: 500px;
         }
 
         #submit-Button {
@@ -122,20 +123,24 @@
                 function send() {
                     const encodedURL = encodeURIComponent(text.value);
                     const newURL = "/check?URL=" + encodedURL;
-                    
-                    // במקום לשנות את המיקום של הדף (מה שגורם לקריסה), נשלח בקשה שקטה
+
                     text.disabled = true;
                     button.innerText = "Scanning...";
-                    
-                    fetch(newURL).then(() => {
-                        // אחרי שהשרת מסיים, נחכה שנייה ונקרא את התוצאה
-                        setTimeout(start, 2000); 
-                        text.disabled = false;
-                        button.innerText = "submit";
-                    }).catch(err => {
-                        console.log("Error or timeout, but check return.txt anyway");
-                        setTimeout(start, 2000);
-                    });
+
+                    fetch(newURL)
+                        .then(res => {
+                            if (!res.ok) {
+                                throw new Error("Scan failed");
+                            }
+                            return res.text(); // חשוב: מחכה לסיום מלא
+                        })
+                        .then(() => {
+                            start(); // קוראים רק אחרי שה־/check הסתיים
+                        })
+                        .finally(() => {
+                            text.disabled = false;
+                            button.innerText = "submit";
+                        });
                 }
 
                 function autoSend(e) {
@@ -146,11 +151,13 @@
                 }
 
                 function start() {
-                    fetch("return.txt").then(res => res.text()).then(text => {
-                        ret.textContent = text
-                    })
-                    console.log("start")
+                    fetch("return.txt?ts=" + Date.now(), { cache: "no-store" })
+                        .then(res => res.text())
+                        .then(text => {
+                            ret.textContent = text;
+                        });
                 }
+
 
                 //eventlisteners
                 button.addEventListener("click", () => send())

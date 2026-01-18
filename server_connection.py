@@ -5,6 +5,7 @@ import mimetypes as mt
 import subprocess
 from urllib.parse import unquote
 
+
 status_codes = {
     200: "OK",
     400: "Bad Request",
@@ -60,22 +61,29 @@ def connect_to_client():
         except: pass
 def GET_(connection, adress, raw_data):
     full_url = extractFile(raw_data)
-    url = full_url
-    part = ""
 
-    if "?" in url:
-        url, part = url.split("?", 1)
-    
+    # פיצול query string
+    if "?" in full_url:
+        url, part = full_url.split("?", 1)
+    else:
+        url, part = full_url, ""
+
     params = toObj(part)
     lookup_url = url if url.startswith("/") else "/" + url
-    
-    # אם זה נתיב מיוחד, השרת יעצור כאן ויחכה ל-subprocess
+
+    # אם זה נתיב מיוחד (spicel)
     if lookup_url in spicel:
         print(f"Executing special function for {lookup_url}...")
-        url = spicel[lookup_url](params)
-    
+        result = spicel[lookup_url](params)
+        # אם הפונקציה מחזירה None, נמשיך להחזיר HTTP 200 ריק
+        if result is None:
+            connection.send(finish_for_sending(get_status_code(200)).encode())
+            connection.close()
+            return
+        url = result
+
     file_to_open = url.lstrip("/")
-    if file_to_open == "": 
+    if file_to_open == "":
         file_to_open = default_access
 
     if not os.path.isfile(file_to_open):
@@ -84,7 +92,6 @@ def GET_(connection, adress, raw_data):
         connection.close()
         return
 
-    # רק כאן, אחרי שהסורק סיים והקובץ מוכן, שולחים וסוגרים
     send_file(connection, adress, file_to_open)
     connection.close()
     print(f"Connection with {adress} closed successfully.")
@@ -188,36 +195,40 @@ def get_default_access(*args, **kwargs):
 def run_script(*args, **kwargs):
     params = args[0]
     target_url = unquote(params.get("URL", ""))
-    
-    if not target_url: return default_access
+
+    if not target_url:
+        return default_access
+
+    # כותב בהתחלה
+    with open(return_adress, "w", encoding="utf-8") as f:
+        f.write("Scanning...\n")
 
     print(f"--- Starting Scan for: {target_url} ---")
-    
+
     try:
-        # שימוש ב-sys.executable מבטיח שזה ירוץ
         import sys
-        # הרצה עם timeout קצר יותר כדי שהדפדפן לא יתייאש
         process = subprocess.run(
-            [sys.executable, "project.py", target_url], 
-            capture_output=True, 
-            text=True, 
-            timeout=15 
+            [sys.executable, "project.py", target_url],
+            capture_output=True,
+            text=True,
+            timeout=15
         )
-        
-        # לוקחים רק את המילה האחרונה מהפלט (למשל 'critical')
-        output = process.stdout.strip().split('\n')[-1]
-        if not output: output = "None (No reflection)"
-        
+
+        output = process.stdout.strip()
+        if not output:
+            output = "None (No reflection)"
+
     except subprocess.TimeoutExpired:
         output = "Scan Timed Out (Safe/Slow)"
     except Exception as e:
         output = f"Error: {str(e)}"
 
-    # כותבים לקובץ שה-JS ב-index.html קורא
     with open(return_adress, "w", encoding="utf-8") as f:
-        f.write(output)
-        
-    return default_access
+        f.write(output + "\n")
+        f.flush()
+        os.fsync(f.fileno())
+
+    return return_adress
 #dictioneries
 options = {
     "GET": GET_,
@@ -242,3 +253,4 @@ main_frame.bind((server_path,server_port))
 main_frame.listen(5)
 threading.Thread(target=connect_loop,daemon=True).start()
 enter_input()
+open("return.txt", "w").close()

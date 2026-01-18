@@ -197,7 +197,8 @@ def Risk_inc_Secure(risk_level):
         additional_warning = "Secure flag missing - Vulnerable to MitM"
 Risk_inc_HTTPONLY(level_of_risk)
 Risk_inc_Secure(level_of_risk)
-print(level_of_risk)
+print("the risk of reflected xss in your website is:"+level_of_risk)
+print("additional risk is:"+additional_warning)
 #example: https://httpbin.org/get?xss=test
 #example: ynet.co.il
 
