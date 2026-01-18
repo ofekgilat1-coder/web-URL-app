@@ -83,8 +83,6 @@ def GET_(connection, adress, raw_data):
         url = result
 
     file_to_open = url.lstrip("/")
-    if file_to_open == "":
-        file_to_open = default_access
 
     if not os.path.isfile(file_to_open):
         print(f"404 Not Found: {file_to_open}")
@@ -190,6 +188,7 @@ def end_program():
 #spicel functions
 def get_default_access(*args, **kwargs):
     print("Sending default")
+    open(return_adress,"w").write(str(""))
     return default_access
 
 def run_script(*args, **kwargs):

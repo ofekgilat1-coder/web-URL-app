@@ -1,5 +1,0 @@
-DEBUG: Scanner received URL: ynet.co.il
-Redirect detected
-the redirect gives differend host
-the risk of reflected xss in your website is:None
-additional risk is:Secure flag missing - Vulnerable to MitM
